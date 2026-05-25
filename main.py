@@ -40,8 +40,8 @@ class HackRadarApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("🛰️ HackRadar Suite v1.2 - Inteligencia de Fabricantes")
-        self.geometry("1050x600") # Un pelín más ancha para que quepa bien el texto del fabricante
+        self.title("🛰️ HackRadar Suite v1.3 - Contador e Intensidad")
+        self.geometry("1180x600") # Un pelín más ancho para la columna de numeración
 
         self.is_scanning = False
         self.loop = None
@@ -82,7 +82,7 @@ class HackRadarApp(ctk.CTk):
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(1, weight=1)
 
-        self.main_title = ctk.CTkLabel(self.main_frame, text="🔎 Radar Inteligente: Identificación de Fabricantes Conocidos", font=ctk.CTkFont(size=16, weight="bold"))
+        self.main_title = ctk.CTkLabel(self.main_frame, text="🔎 Análisis de Contramedidas Escolares (Ordenado por Intensidad)", font=ctk.CTkFont(size=16, weight="bold"))
         self.main_title.grid(row=0, column=0, sticky="w", padx=20, pady=15)
 
         self.textbox_radar = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Courier", size=13))
@@ -92,15 +92,10 @@ class HackRadarApp(ctk.CTk):
         self.textbox_radar.configure(state="disabled")
 
     def get_vendor_by_mac(self, mac):
-        """ Extrae los 3 primeros pares de la MAC y busca el fabricante probable """
-        mac_prefix = mac.lower()[:8] # Se queda con los primeros 8 caracteres (ej: "00:1a:11")
-        
-        # 🛡️ Detección de MAC Aleatoria (Privacidad de Smartphones)
-        # Si el segundo carácter es 2, 6, A o E, es una dirección privada/aleatoria generada por software
+        mac_prefix = mac.lower()[:8]
         if len(mac_prefix) > 1 and mac_prefix[1] in ['2', '6', 'a', 'e']:
-            return "MAC Aleatoria (Dispositivo Móvil Privado)"
-            
-        return MAC_VENDORS.get(mac_prefix, "Fabricante Desconocido / Genérico")
+            return "MAC Aleatoria (Móvil Privado)"
+        return MAC_VENDORS.get(mac_prefix, "Fabricante Genérico")
 
     def device_detected(self, device, advertisement_data):
         if not self.is_scanning:
@@ -110,9 +105,9 @@ class HackRadarApp(ctk.CTk):
         nombre = device.name if device.name else "Dispositivo Oculto"
         rssi = advertisement_data.rssi
         
-        # 🕵️‍♂️ Averiguamos quién es el fabricante probable analizando la MAC
         fabricante = self.get_vendor_by_mac(mac)
         
+        # Guardamos/Actualizamos el dispositivo con sus datos frescos
         self.detected_devices[mac] = {"name": nombre, "rssi": rssi, "vendor": fabricante}
         self.update_radar_display()
 
@@ -120,14 +115,17 @@ class HackRadarApp(ctk.CTk):
         self.textbox_radar.configure(state="normal")
         self.textbox_radar.delete("1.0", "end")
         
-        # Cabecera extendida con la columna FABRICANTE PROBABLE
-        self.textbox_radar.insert("end", f"{'DIRECCIÓN MAC':<20} | {'FABRICANTE PROBABLE':<30} | {'ID DISPOSITIVO':<23} | {'POTENCIA':<10}\n")
-        self.textbox_radar.insert("end", "-" * 95 + "\n")
+        # Cabecera con la nueva columna "Nº" para contar las señales totales
+        self.textbox_radar.insert("end", f"{'Nº':<4} | {'DIRECCIÓN MAC':<20} | {'FABRICANTE PROBABLE':<30} | {'ID DISPOSITIVO':<23} | {'POTENCIA':<10}\n")
+        self.textbox_radar.insert("end", "-" * 102 + "\n")
         
+        # 🎯 CRÍTICO: Ordenación matemática estricta de Mayor a Menor intensidad (RSSI)
+        # Los valores menos negativos (ej: -50 dBm) van arriba de los más negativos (ej: -90 dBm)
         sorted_devices = sorted(self.detected_devices.items(), key=lambda x: x[1]['rssi'], reverse=True)
         
-        for mac, info in sorted_devices:
-            linea = f"{mac:<20} | {info['vendor']:<30} | {info['name']:<23} | {info['rssi']:>4} dBm\n"
+        # Recorremos la lista metiendo el número secuencial (1, 2, 3...)
+        for indice, (mac, info) in enumerate(sorted_devices, start=1):
+            linea = f"{indice:<4} | {mac:<20} | {info['vendor']:<30} | {info['name']:<23} | {info['rssi']:>4} dBm\n"
             self.textbox_radar.insert("end", linea)
             
         self.textbox_radar.configure(state="disabled")
@@ -148,7 +146,7 @@ class HackRadarApp(ctk.CTk):
         
         self.textbox_radar.configure(state="normal")
         self.textbox_radar.delete("1.0", "end")
-        self.textbox_radar.insert("end", "[+] Inicializando radar con decodificación de OUI de fabricantes...\n")
+        self.textbox_radar.insert("end", "[+] Inicializando radar táctico y mapeando intensidades...\n")
         self.textbox_radar.configure(state="disabled")
 
         self.scan_thread = threading.Thread(target=self.run_async_loop, daemon=True)
@@ -162,7 +160,7 @@ class HackRadarApp(ctk.CTk):
         if self.loop:
             self.loop.call_soon_threadsafe(self.loop.stop)
         self.textbox_radar.configure(state="normal")
-        self.textbox_radar.insert("end", "\n[-] Radar en pausa. Objetos congelados.\n")
+        self.textbox_radar.insert("end", f"\n[-] Escáner detenido. Total de amenazas únicas registradas: {len(self.detected_devices)}\n")
         self.textbox_radar.configure(state="disabled")
 
     def close_app(self):
