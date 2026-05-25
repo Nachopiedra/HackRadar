@@ -2,6 +2,8 @@ import customtkinter as ctk
 import asyncio
 import threading
 from bleak import BleakScanner
+from datetime import datetime
+import os
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -38,14 +40,15 @@ class HackRadarApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("🛰️ HackRadar Suite v1.5 - Formato Avanzado TSCM")
-        self.geometry("1280x650") # Ancho total panorámico blindado
+        self.title("🛰️ HackRadar Suite v1.6 - Módulo TSCM Completo")
+        self.geometry("1280x720") # Altura expandida para el módulo rastreador
 
         self.is_scanning = False
         self.loop = None
         self.scan_thread = None
         
         self.detected_devices = {}
+        self.tracking_mac = ""
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -55,7 +58,7 @@ class HackRadarApp(ctk.CTk):
         # ---------------------------------------------------------
         self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(4, weight=1)
+        self.sidebar_frame.grid_rowconfigure(6, weight=1)
 
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="HACKRADAR", font=ctk.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
@@ -69,8 +72,12 @@ class HackRadarApp(ctk.CTk):
         self.btn_stop = ctk.CTkButton(self.sidebar_frame, text="🛑 Detener", fg_color="coral", hover_color="crimson", command=self.stop_scan)
         self.btn_stop.grid(row=3, column=0, padx=20, pady=10)
 
+        # 💾 BOTÓN REPORTE TSCM
+        self.btn_report = ctk.CTkButton(self.sidebar_frame, text="💾 Guardar Log TSCM", fg_color="darkgreen", hover_color="green", command=self.generate_report)
+        self.btn_report.grid(row=4, column=0, padx=20, pady=10)
+
         self.stats_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.stats_frame.grid(row=4, column=0, padx=10, pady=20, sticky="n")
+        self.stats_frame.grid(row=5, column=0, padx=10, pady=15, sticky="n")
         
         self.lbl_total = ctk.CTkLabel(self.stats_frame, text="Dispositivos: 0", font=ctk.CTkFont(size=12))
         self.lbl_total.grid(row=0, column=0, sticky="w", pady=2)
@@ -79,10 +86,10 @@ class HackRadarApp(ctk.CTk):
         self.lbl_alerts.grid(row=1, column=0, sticky="w", pady=2)
 
         self.btn_exit = ctk.CTkButton(self.sidebar_frame, text="Salir", fg_color="gray20", hover_color="gray30", command=self.close_app)
-        self.btn_exit.grid(row=5, column=0, padx=20, pady=20)
+        self.btn_exit.grid(row=7, column=0, padx=20, pady=20)
 
         # ---------------------------------------------------------
-        # PANEL CENTRAL (VISUALIZADOR DE DATOS)
+        # PANEL CENTRAL (VISUALIZADOR Y RASTREADOR)
         # ---------------------------------------------------------
         self.main_frame = ctk.CTkFrame(self, corner_radius=15)
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
@@ -92,12 +99,37 @@ class HackRadarApp(ctk.CTk):
         self.main_title = ctk.CTkLabel(self.main_frame, text="🔎 Monitorización en Aula: Detección de Amenazas Ocultas (TSCM)", font=ctk.CTkFont(size=15, weight="bold"))
         self.main_title.grid(row=0, column=0, sticky="w", padx=20, pady=15)
 
-        # Usamos wrap="none" para prohibir terminantemente que el texto salte hacia abajo de forma automática
         self.textbox_radar = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Courier", size=13), wrap="none")
-        self.textbox_radar.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.textbox_radar.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 15))
         
         self.textbox_radar.insert("0.0", "Esperando inicio de escaneo táctico...\n")
         self.textbox_radar.configure(state="disabled")
+
+        # ---------------------------------------------------------
+        # 📡 SUBPANEL DE RASTREO ACTIVO DE OBJETIVO (GONIO)
+        # ---------------------------------------------------------
+        self.tracker_frame = ctk.CTkFrame(self.main_frame, height=130, border_width=1, border_color="gray30")
+        self.tracker_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+        self.tracker_frame.grid_columnconfigure(1, weight=1)
+
+        self.lbl_track_title = ctk.CTkLabel(self.tracker_frame, text="📡 LOCALIZADOR DE DIRECCIÓN POR PROXIMIDAD", font=ctk.CTkFont(size=12, weight="bold"))
+        self.lbl_track_title.grid(row=0, column=0, columnspan=3, padx=15, pady=5, sticky="w")
+
+        self.lbl_mac_input = ctk.CTkLabel(self.tracker_frame, text="MAC Objetivo:")
+        self.lbl_mac_input.grid(row=1, column=0, padx=(15, 5), pady=5, sticky="w")
+
+        self.entry_mac = ctk.CTkEntry(self.tracker_frame, placeholder_text="AA:BB:CC:DD:EE:FF", width=200, font=ctk.CTkFont(family="Courier"))
+        self.entry_mac.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        self.btn_track = ctk.CTkButton(self.tracker_frame, text="Fijar Objetivo", width=120, fg_color="purple", hover_color="indigo", command=self.toggle_tracking)
+        self.btn_track.grid(row=1, column=2, padx=15, pady=5, sticky="e")
+
+        self.progress_bar = ctk.CTkProgressBar(self.tracker_frame, height=15)
+        self.progress_bar.grid(row=2, column=0, columnspan=2, padx=(15, 15), pady=10, sticky="ew")
+        self.progress_bar.set(0)
+
+        self.lbl_proximity = ctk.CTkLabel(self.tracker_frame, text="Rastreador: En espera", font=ctk.CTkFont(size=12, weight="bold"), text_color="gray")
+        self.lbl_proximity.grid(row=2, column=2, padx=15, pady=10, sticky="w")
 
     def get_vendor_by_mac(self, mac):
         mac_prefix = mac.lower()[:8]
@@ -133,27 +165,68 @@ class HackRadarApp(ctk.CTk):
             "rssi": rssi, 
             "vendor": fabricante, 
             "is_threat": es_sospechoso,
-            "reason": razon
+            "reason": razon,
+            "last_seen": datetime.now().strftime("%H:%M:%S")
         }
+        
+        if self.tracking_mac and mac.lower() == self.tracking_mac.lower():
+            self.update_tracker_module(rssi)
+
         self.update_radar_display()
+
+    def toggle_tracking(self):
+        if not self.tracking_mac:
+            target = self.entry_mac.get().strip()
+            if len(target) >= 12:
+                self.tracking_mac = target
+                self.btn_track.configure(text="Liberar", fg_color="crimson", hover_color="darkred")
+                self.entry_mac.configure(state="disabled")
+                self.lbl_proximity.configure(text="Buscando señal...", text_color="yellow")
+            else:
+                self.lbl_proximity.configure(text="❌ MAC Inválida", text_color="red")
+        else:
+            self.tracking_mac = ""
+            self.btn_track.configure(text="Fijar Objetivo", fg_color="purple", hover_color="indigo")
+            self.entry_mac.configure(state="normal")
+            self.progress_bar.set(0)
+            self.lbl_proximity.configure(text="Rastreador: En espera", text_color="gray")
+
+    def update_tracker_module(self, rssi):
+        clamped_rssi = max(-90, min(-40, rssi))
+        percentage = (clamped_rssi - (-90)) / (-40 - (-90))
+        self.progress_bar.set(percentage)
+
+        if rssi >= -60:
+            self.lbl_proximity.configure(text=f"🔥 ¡PROXIMIDAD MÁXIMA! ({rssi} dBm) < 1 metro", text_color="red")
+            self.progress_bar.configure(progress_color="red")
+        elif rssi >= -70:
+            self.lbl_proximity.configure(text=f"⚠️ CALIENTE - SECTOR CERCANO ({rssi} dBm)", text_color="orange")
+            self.progress_bar.configure(progress_color="orange")
+        elif rssi >= -80:
+            self.lbl_proximity.configure(text=f"⏳ TEMPLADO - EN RANGO ({rssi} dBm)", text_color="yellow")
+            self.progress_bar.configure(progress_color="yellow")
+        else:
+            self.lbl_proximity.configure(text=f"❄️ FRÍO - SEÑAL LEJANA ({rssi} dBm)", text_color="cyan")
+            self.progress_bar.configure(progress_color="cyan")
 
     def update_radar_display(self):
         self.textbox_radar.configure(state="normal")
         self.textbox_radar.delete("1.0", "end")
         
-        # Cabecera con espaciados fijos corregidos milimétricamente
         self.textbox_radar.insert("end", f"{'Nº':<5} | {'DIRECCIÓN MAC':<20} | {'FABRICANTE PROBABLE':<35} | {'ID DISPOSITIVO':<23} | {'POTENCIA':<10} | {'ALERTA TSCM'}\n")
         self.textbox_radar.insert("end", "-" * 125 + "\n")
         
         sorted_devices = sorted(self.detected_devices.items(), key=lambda x: x[1]['rssi'], reverse=True)
         
         contador_alertas = 0
-        
         for indice, (mac, info) in enumerate(sorted_devices, start=1):
             if info['is_threat']:
                 contador_alertas += 1
+            
+            prefix = "🎯 " if self.tracking_mac and mac.lower() == self.tracking_mac.lower() else ""
+            mac_display = f"{prefix}{mac}"
                 
-            linea = f"{indice:<5} | {mac:<20} | {info['vendor']:<35} | {info['name']:<23} | {info['rssi']:>4} dBm | {info['reason']}\n"
+            linea = f"{indice:<5} | {mac_display:<20} | {info['vendor']:<35} | {info['name']:<23} | {info['rssi']:>4} dBm | {info['reason']}\n"
             self.textbox_radar.insert("end", linea)
             
         self.lbl_total.configure(text=f"Dispositivos: {len(self.detected_devices)}")
@@ -165,6 +238,40 @@ class HackRadarApp(ctk.CTk):
             self.status_label.configure(text="Estado: Escaneando...", text_color="lime")
             
         self.textbox_radar.configure(state="disabled")
+
+    def generate_report(self):
+        if not self.detected_devices:
+            return
+
+        filename = f"TSCM_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write("==================================================================\n")
+                f.write("        INFORME FORENSE DE INSPECCIÓN ELECTRÓNICA DE AULA (TSCM)\n")
+                f.write("==================================================================\n")
+                f.write(f"Fecha/Hora del Reporte : {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}\n")
+                f.write(f"Dispositivos en Canal  : {len(self.detected_devices)}\n")
+                amenazas = sum(1 for x in self.detected_devices.values() if x['is_threat'])
+                f.write(f"Alertas de Alta Sospecha: {amenazas}\n")
+                f.write("------------------------------------------------------------------\n\n")
+                
+                f.write(f"{'DIRECCIÓN MAC':<20} | {'FABRICANTE':<35} | {'ID DISPOSITIVO':<23} | {'RSSI':<8} | {'ESTADO TSCM'}\n")
+                f.write("-" * 105 + "\n")
+                
+                sorted_devices = sorted(self.detected_devices.items(), key=lambda x: x[1]['rssi'], reverse=True)
+                for mac, info in sorted_devices:
+                    f.write(f"{mac:<20} | {info['vendor']:<35} | {info['name']:<23} | {info['rssi']:>4} dBm | {info['reason']}\n")
+                    
+                f.write("\n==================================================================\n")
+                f.write("Fin del informe. Registro obtenido mediante HackRadar Suite v1.6.\n")
+            
+            self.textbox_radar.configure(state="normal")
+            self.textbox_radar.insert("end", f"\n💾 [SUCCES] Registro Forense guardado con éxito como: '{filename}'\n")
+            self.textbox_radar.configure(state="disabled")
+        except Exception as e:
+            self.textbox_radar.configure(state="normal")
+            self.textbox_radar.insert("end", f"\n❌ Error al guardar el reporte: {str(e)}\n")
+            self.textbox_radar.configure(state="disabled")
 
     def run_async_loop(self):
         self.loop = asyncio.new_event_loop()
@@ -182,7 +289,7 @@ class HackRadarApp(ctk.CTk):
         
         self.textbox_radar.configure(state="normal")
         self.textbox_radar.delete("1.0", "end")
-        self.textbox_radar.insert("end", "[+] Inicializando contramedidas y aplicando reglas de Lista Negra...\n")
+        self.textbox_radar.insert("end", "[+] Inicializando contramedidas y aplicando reglas de Lista Negra TSCM...\n")
         self.textbox_radar.configure(state="disabled")
 
         self.scan_thread = threading.Thread(target=self.run_async_loop, daemon=True)
