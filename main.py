@@ -31,15 +31,15 @@ MAC_VENDORS = {
     "0c:8b:95": "Hyundai Motor Co. (Manos Libres)",
 }
 
-# 🎯 CRITERIOS DE LISTA NEGRA (Palabras clave de fabricantes sospechosos de espionaje/IoT)
+# 🎯 CRITERIOS DE LISTA NEGRA
 BLACKList_VENDORS = ["espressif", "tuya", "unknown", "genérico", "desconocido"]
 
 class HackRadarApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("🛰️ HackRadar Suite v1.4 - Analizador TSCM / Lista Negra")
-        self.geometry("1200x630") 
+        self.title("🛰️ HackRadar Suite v1.5 - Formato Avanzado TSCM")
+        self.geometry("1280x650") # Ancho total panorámico blindado
 
         self.is_scanning = False
         self.loop = None
@@ -69,7 +69,6 @@ class HackRadarApp(ctk.CTk):
         self.btn_stop = ctk.CTkButton(self.sidebar_frame, text="🛑 Detener", fg_color="coral", hover_color="crimson", command=self.stop_scan)
         self.btn_stop.grid(row=3, column=0, padx=20, pady=10)
 
-        # Panel de estadísticas tácticas rápido
         self.stats_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
         self.stats_frame.grid(row=4, column=0, padx=10, pady=20, sticky="n")
         
@@ -93,7 +92,8 @@ class HackRadarApp(ctk.CTk):
         self.main_title = ctk.CTkLabel(self.main_frame, text="🔎 Monitorización en Aula: Detección de Amenazas Ocultas (TSCM)", font=ctk.CTkFont(size=15, weight="bold"))
         self.main_title.grid(row=0, column=0, sticky="w", padx=20, pady=15)
 
-        self.textbox_radar = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Courier", size=13))
+        # Usamos wrap="none" para prohibir terminantemente que el texto salte hacia abajo de forma automática
+        self.textbox_radar = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Courier", size=13), wrap="none")
         self.textbox_radar.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
         
         self.textbox_radar.insert("0.0", "Esperando inicio de escaneo táctico...\n")
@@ -114,22 +114,19 @@ class HackRadarApp(ctk.CTk):
         rssi = advertisement_data.rssi
         fabricante = self.get_vendor_by_mac(mac)
         
-        # ⚠️ MOTOR DE EVALUACIÓN DE LISTA NEGRA / SOSPECHA
-        # Criterio 1: Fabricante sospechoso de IoT/Microcámaras o genérico muy próximo.
-        # Criterio 2: Señal críticamente alta (>-65 dBm) que denota que está dentro de la sala del examen.
         es_sospechoso = False
-        razon = ""
+        razon = "OK"
         
         vendor_lower = fabricante.lower()
         if any(x in vendor_lower for x in BLACKList_VENDORS) and rssi >= -70:
             es_sospechoso = True
-            razon = "[PROPÓSITO IOT/ALTA SOSPECHA]"
-        elif rssi >= -65: # Umbral físico de proximidad extrema en aula
+            razon = "🔥 ALERT: [SOSPECHA IOT]"
+        elif rssi >= -65:
             es_sospechoso = True
-            razon = "[PROXIMIDAD CRÍTICA EN AULA]"
+            razon = "🔥 ALERT: [PROXIMIDAD CRÍTICA]"
         elif "aleatoria" in vendor_lower and rssi >= -68:
             es_sospechoso = True
-            razon = "[MÓVIL EMITIENDO RÁFAGAS]"
+            razon = "🔥 ALERT: [RÁFAGAS MÓVIL]"
 
         self.detected_devices[mac] = {
             "name": nombre, 
@@ -144,8 +141,9 @@ class HackRadarApp(ctk.CTk):
         self.textbox_radar.configure(state="normal")
         self.textbox_radar.delete("1.0", "end")
         
-        self.textbox_radar.insert("end", f"{'Nº':<4} | {'DIRECCIÓN MAC':<20} | {'FABRICANTE PROBABLE':<30} | {'ID DISPOSITIVO':<20} | {'POTENCIA':<10} | {'ALERTA TSCM':<25}\n")
-        self.textbox_radar.insert("end", "-" * 115 + "\n")
+        # Cabecera con espaciados fijos corregidos milimétricamente
+        self.textbox_radar.insert("end", f"{'Nº':<5} | {'DIRECCIÓN MAC':<20} | {'FABRICANTE PROBABLE':<35} | {'ID DISPOSITIVO':<23} | {'POTENCIA':<10} | {'ALERTA TSCM'}\n")
+        self.textbox_radar.insert("end", "-" * 125 + "\n")
         
         sorted_devices = sorted(self.detected_devices.items(), key=lambda x: x[1]['rssi'], reverse=True)
         
@@ -154,14 +152,10 @@ class HackRadarApp(ctk.CTk):
         for indice, (mac, info) in enumerate(sorted_devices, start=1):
             if info['is_threat']:
                 contador_alertas += 1
-                # Formato visual de alerta roja de peligro inminente en la tabla
-                linea = f"{indice:<4} | {mac:<20} | {info['vendor']:<30} | {info['name']:<20} | {info['rssi']:>4} dBm | 🔥 ALERT: {info['reason']}\n"
-            else:
-                linea = f"{indice:<4} | {mac:<20} | {info['vendor']:<30} | {info['name']:<20} | {info['rssi']:>4} dBm | OK\n"
                 
+            linea = f"{indice:<5} | {mac:<20} | {info['vendor']:<35} | {info['name']:<23} | {info['rssi']:>4} dBm | {info['reason']}\n"
             self.textbox_radar.insert("end", linea)
             
-        # Actualizar los paneles informativos de la izquierda en tiempo real
         self.lbl_total.configure(text=f"Dispositivos: {len(self.detected_devices)}")
         if contador_alertas > 0:
             self.lbl_alerts.configure(text=f"🚨 ALERTAS: {contador_alertas}", text_color="red")
